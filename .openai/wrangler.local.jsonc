@@ -1,0 +1,9 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "rgboo-organizer-local",
+  "main": "../worker/index.ts",
+  "env": {
+    "staging": {},
+    "production": {},
+  },
+}
