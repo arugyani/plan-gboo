@@ -1,94 +1,85 @@
 # Architecture
 
-## Shape of the system
+## Components
 
-```mermaid
-flowchart LR
-  Person["Person"] -->|"Discord OAuth"| Main["Main Worker"]
-  Discord["Discord interactions"] -->|"signed requests"| Main
-  Main -->|"static shell"| Assets["Workers Static Assets"]
-  Main -->|"prepared queries"| D1["D1 database"]
-  Jobs["Jobs Worker every 5 min"] --> D1
-  Jobs -->|"outbox delivery"| Discord
-  Monitor["External uptime monitor"] --> Main
-  Jobs -->|"heartbeat"| Monitor
-```
+1. The React single-page app renders boards and sends JSON to same-origin
+   `/api/*` routes. TanStack Query refreshes every 30 seconds and on focus.
+2. The Cloudflare Worker serves the built assets, completes Discord OAuth,
+   validates signed session cookies, and acts as a backend-for-frontend proxy.
+3. The .NET Discord bot hosts the private board API and Discord commands.
+4. MongoDB is the sole persistent store for groups, boards, cards, assignments,
+   checklists, comments, GitHub issue links, Discord source links, and change
+   history.
 
-The main Worker owns the React assets, same-origin API, Better Auth callback, and
-Discord interaction endpoint. The jobs Worker has no user-facing routes and only
-processes bounded batches. Both use the same D1 database within an environment.
+The web and bot repositories deploy independently. API/model changes therefore
+remain additive and backward compatible.
 
-Staging and production have independent Workers, databases, Discord applications,
-credentials, and recovery histories.
+## Authentication and authorization
 
-## Identity and authorization
+The website starts the Discord authorization-code flow with the `identify`
+scope. A cryptographically random state value ties the callback to the browser.
+After exchanging the one-time code, the Worker stores only the Discord user ID
+inside an HMAC-signed, seven-day HttpOnly cookie; Discord access tokens are not
+persisted.
 
-Discord user ID is the stable identity shared by the site and bot. Better Auth
-owns users, linked accounts, and sessions. Every user request is authenticated
-server-side; every card mutation then checks the person’s group role. The UI
-hides unavailable actions for clarity, but it is never the security boundary.
+For API calls, the Worker removes caller-controlled credentials and identity
+headers, then adds its bot service token, the session's Discord user ID, and the
+configured guild ID. The bot checks the service token in constant time, fetches
+the member from Discord, and applies these roles:
 
-Guild membership is cached for six hours to keep normal requests quick. Missing
-or stale membership is revalidated with Discord. The jobs Worker also checks a
-small stale-member batch every five minutes. A person who leaves the guild is
-deactivated, and private group access always remains explicitly assigned.
+- `admin`: guild owner or configured bootstrap administrator.
+- `organizer`: manages a group's people, boards, and theme.
+- `member`: reads and changes cards in the group.
+- `view_only`: reads the group but cannot mutate it.
 
-`INITIAL_ADMIN_DISCORD_ID` promotes only the matching account during first-user
-creation. Remove the value after the first administrator has signed in and the
-role has been verified.
+A missing Discord member is rejected even if a stale session or Mongo record
+still exists.
 
-## Data and consistency
+## Shared product model
 
-D1 stores people, sessions, groups, memberships, boards, columns, cards, people
-on cards, tags, checklists, comments, GitHub issue links, saved views,
-notification preferences, change records, outbox work, and Discord idempotency
-keys.
+Every board exposes five columns. The visible names, colors, and order can be
+changed by an organizer, while the stored status values remain stable for old
+Discord cards. A floating-point rank orders cards within a column and allows an
+insert between neighbors without rewriting every card.
 
-Mutations use prepared statements and role checks. Card updates include the
-client’s last-seen `version`; a mismatch returns `409 version_conflict` instead
-of overwriting another person’s work. Moves are optimistic in the browser and
-roll back with a visible message if persistence fails.
+**All Together** combines selected boards for searching, filtering, and opening
+cards. It deliberately has no drag-and-drop because two boards may give the
+same position different meanings. The card sheet always offers explicit column,
+Move up, and Move down controls for touch and keyboard use.
 
-Archivable records use timestamps instead of immediate destructive deletion.
-Queries are indexed around group membership, board/column/rank, card people,
-dates, comments, links, and outbox status. The dashboard refreshes every 30
-seconds, after local changes, and when its tab regains focus. WebSockets are not
-needed at this size.
+Every saved card change stores who acted, what changed, and when. The card keeps
+the latest 100 entries and the dashboard exposes the newest 50 as **What’s
+Happening**. Discord slash commands, component buttons, the message action, and
+website writes all append to this same history.
 
-## Discord path
+The Discord message action stores the selected message ID and jump URL. A
+partial unique MongoDB index plus a guarded insert makes Discord retries
+idempotent.
 
-The interaction endpoint verifies Ed25519 signature and timestamp before parsing
-the body. It rejects interactions from any guild other than the configured guild
-and claims each interaction ID in D1 so Discord retries cannot create duplicate
-cards.
+## Consistency
 
-The bot and website call the same card service and authorization rules. Normal
-responses are private; only an explicit board recap is public. The outbox keeps
-scheduled or retried delivery separate from the three-second interaction path.
+Each card has a monotonically increasing version. Mutation requests include the
+version the editor saw. A mismatch returns `409 version_conflict`; the UI
+refreshes and reports that the card changed instead of silently overwriting the
+other edit.
 
-## GitHub issue links
+Moves are optimistic in the browser. The previous dashboard snapshot is kept,
+and a rejected move restores it before refreshing authoritative data.
 
-A card may contain multiple canonical URLs matching:
+Discord commands also use compare-and-swap updates. If the website changes a
+card between a command read and write, the command asks the person to try again
+instead of replacing the newer version.
 
-```text
-https://github.com/<owner>/<repository>/issues/<positive-number>
-```
+## Runtime boundaries
 
-The server validates and stores the owner, repository, and issue number. The same
-operation is available in the card sheet and `/card link`. This gives dependable
-links without storing a broad GitHub credential. Automatic title/state sync can
-later be added through a least-privilege GitHub App without changing the card
-model.
+Static hashed assets bypass Worker execution. HTML, auth, health, and API paths
+run through the Worker so security headers and authentication remain consistent.
+The Worker performs no server-side rendering and holds no mutable global data.
 
-## Failure boundaries
+The bot reuses one `MongoClient` for the process so the official driver can
+pool connections. Startup creates query indexes for board/card order and unique
+partial indexes for board names, group names, and Discord source messages.
 
-- Static assets are served without executing app code.
-- The main Worker remains usable if scheduled work is delayed.
-- Outbox rows are claimed before delivery and retried with bounded exponential
-  delay; failures are retained for inspection.
-- Discord outages produce friendly temporary errors rather than bypassing guild
-  checks.
-- Worker releases are immutable and reversible. Database restoration is a
-  separate, human-confirmed operation.
-- Logs contain correlation IDs and operational metadata, not card contents or
-  credentials.
+`/api/health/live` proves the Worker is executing. `/api/health/ready` also
+checks the bot's `/health` endpoint. Neither endpoint exposes card data or
+credentials.

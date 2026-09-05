@@ -1,105 +1,62 @@
-# Deployment and recovery runbook
+# Operations runbook
 
-## GitHub environments
+## Normal checks
 
-Create `staging` and `production` environments. Require one reviewer for
-production. Configure these in each environment.
+Monitor `/api/health/live` and `/api/health/ready` from outside Cloudflare every
+five minutes. Liveness isolates the Worker; readiness includes the bot and
+MongoDB/Discord health. Alert only on repeated failure to avoid noise during a
+single deploy.
 
-Secrets:
+Review weekly:
 
-- `CLOUDFLARE_API_TOKEN`: scoped to Workers Scripts, D1, and account read for the
-  target account.
-- `CLOUDFLARE_ACCOUNT_ID`
-- `CLOUDFLARE_D1_DATABASE_ID`
-- `BETTER_AUTH_SECRET`: independent random value per environment.
-- `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, `DISCORD_PUBLIC_KEY`, and
-  `DISCORD_BOT_TOKEN`
-- `MONITOR_HEARTBEAT_URL` (optional but recommended)
+- Worker dynamic request count and CPU-limit errors.
+- bot restarts, health failures, and Discord reconnects.
+- MongoDB storage, connections, and backup status.
+- dependency alerts and failed scheduled workflows.
+- Worker Free-plan usage: dynamic requests, CPU-limit errors, and current asset
+  totals. This architecture does not use D1.
 
-Variables:
+Targets are 99.9% monthly availability, API p95 under 500 ms, and recovery within
+30 minutes. These are internal targets, not a free-plan service guarantee.
 
-- `APP_URL`: exact stable `https://...workers.dev` URL.
-- `PREVIEW_URL`: exact candidate alias URL, normally
-  `https://candidate-<worker-name>.<workers-subdomain>.workers.dev`.
-- `DISCORD_APPLICATION_ID`
-- `DISCORD_GUILD_ID`
-- `INITIAL_ADMIN_DISCORD_ID` only during bootstrap.
+Investigate repeated usage above 60% of a free quota. Upgrade before 80%, when
+normal requests hit the Worker CPU limit, or when the single always-on Fly
+machine no longer meets the availability target. Do not wait for an outage to
+make the decision.
 
-The committed UUIDs are obvious placeholders. The build reads the real D1 ID
-from `CLOUDFLARE_D1_DATABASE_ID` and writes it only to ignored generated output.
+## Website outage
 
-## Normal release
+1. Check `/api/health/live`. If it fails, inspect the latest Worker deployment
+   and Cloudflare logs using the response correlation ID.
+2. Check `/api/health/ready`. If only readiness fails, investigate the bot before
+   changing the website.
+3. A failed production smoke check normally triggers an automatic rollback.
+   Confirm it completed; if it did not, identify the prior stable version in the
+   workflow log and use Wrangler's version rollback flow.
+4. Run both health checks and one signed-in dashboard read after rollback.
 
-1. Open a pull request. CI must pass and one person must review it.
-2. Merge to protected `main`; staging deploys automatically after that commit’s
-   CI run succeeds.
-3. Verify sign-in, a card edit/move, a GitHub link, one bot command, and the jobs
-   heartbeat in staging.
-4. Run **Deploy production**, enter the exact tested commit SHA, and approve the
-   protected environment prompt.
-5. Confirm `/api/health/live`, `/api/health/ready`, Discord commands, and the
-   heartbeat after promotion.
+## Bot/backend outage
 
-Migrations must remain backward-compatible with the currently deployed Worker.
-Use expand/migrate/contract across separate releases for destructive schema
-changes.
+1. Check `https://boof-ban.fly.dev/health` and Fly machine status/logs.
+2. Confirm Discord and MongoDB provider status before restarting healthy code.
+3. If the new release is unhealthy, redeploy the previous Git revision through
+   the protected bot workflow.
+4. Verify one Discord read command, dashboard readiness, and a harmless card
+   edit after recovery.
 
-## Worker rollback
+If the bot starts but the API reports `api_not_configured`, confirm the Fly
+`Web__ApiKey` secret is at least 32 bytes and matches the Worker's
+`BOT_API_TOKEN`. Rotate both sides together; do not print either value.
 
-The production workflow automatically runs Wrangler rollback if its final smoke
-test fails. For a later application regression:
+## Data recovery
 
-```bash
-npx wrangler deployments list --config dist/server/wrangler.json
-npx wrangler rollback --config dist/server/wrangler.json --message "incident rollback" --yes
-```
+Do not automatically restore MongoDB. A restore can discard valid writes made
+after the incident. Stop mutation traffic, identify the exact affected records
+and recovery point, take a fresh snapshot, obtain organizer approval, restore,
+then compare card counts and representative records before reopening writes.
 
-Rollback the main Worker first. Roll back the jobs Worker separately only when
-its behavior caused the incident. A Worker rollback does not undo a migration.
+## Credential incident
 
-## D1 recovery
-
-Each production release stores a D1 Time Travel bookmark as a workflow artifact.
-Never automate a restore: it can discard valid writes made after the selected
-point.
-
-During a data incident:
-
-1. Stop the source of bad writes by rolling back or disabling the affected
-   feature.
-2. Record a new current bookmark and preserve logs/correlation IDs.
-3. Identify the last good bookmark from the production recovery artifact.
-4. Estimate which legitimate later writes would be lost and tell the group.
-5. Restore only after a second person confirms the environment and bookmark.
-6. Verify row counts, sign-in, representative cards, and change history.
-
-Target recovery time is 30 minutes. Free D1 Time Travel provides seven days of
-history, so investigate data incidents promptly.
-
-## Monitoring and targets
-
-Use an external HTTPS monitor for:
-
-- `/api/health/live`: process and routing are alive.
-- `/api/health/ready`: D1 can answer a query.
-- Jobs heartbeat: alert when no ping arrives within 10 minutes.
-
-Route alerts to Discord and email. Review Cloudflare usage weekly. Internal
-targets are 99.9% monthly availability, API p95 under 500 ms, Discord
-acknowledgement under 2.5 seconds, and scheduled updates no more than 10 minutes
-late. These are engineering targets, not a Free-plan SLA.
-
-Start on Workers Free. Investigate at 60% of any daily limit and upgrade rather
-than risk an outage at 80%. Upgrade sooner for normal-flow CPU-limit errors, more
-than seven days of recovery history, more than five schedules, or heavier jobs.
-
-## Incident checklist
-
-- Confirm which environment and which surface (assets, API, D1, Discord, jobs).
-- Capture UTC time, correlation ID, Worker version, response code, and a minimal
-  reproduction without copying private card contents.
-- Check Cloudflare status before changing application state.
-- Prefer Worker rollback for code regressions; do not restore D1 as a reflex.
-- Rotate a credential immediately if logs or output may have exposed it.
-- After recovery, record cause, detection gap, lost/delayed work, and one owned
-  prevention action.
+Rotate in this order: exposed service/deploy credential, dependent environment
+bindings, then affected sessions. Redeploy after rotation and search logs only
+for safe identifiers—never paste tokens into issues or chat.

@@ -2,112 +2,60 @@ name: Deploy production
 
 on:
   workflow_dispatch:
-    inputs:
-      ref:
-        description: Commit SHA from a successful staging deployment
-        required: true
-        type: string
-
-permissions:
-  contents: read
 
 concurrency:
   group: deploy-production
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
 jobs:
   deploy:
+    if: github.ref == 'refs/heads/main' && vars.ENABLE_DEPLOYMENTS == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 25
     environment: production
-    env:
-      RELEASE_REF: ${{ inputs.ref }}
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      CLOUDFLARE_D1_DATABASE_ID: ${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}
-      BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
-      DISCORD_CLIENT_ID: ${{ secrets.DISCORD_CLIENT_ID }}
-      DISCORD_APPLICATION_ID: ${{ vars.DISCORD_APPLICATION_ID }}
-      DISCORD_CLIENT_SECRET: ${{ secrets.DISCORD_CLIENT_SECRET }}
-      DISCORD_PUBLIC_KEY: ${{ secrets.DISCORD_PUBLIC_KEY }}
-      DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
-      DISCORD_GUILD_ID: ${{ vars.DISCORD_GUILD_ID }}
-      INITIAL_ADMIN_DISCORD_ID: ${{ vars.INITIAL_ADMIN_DISCORD_ID }}
-      BETTER_AUTH_URL: ${{ vars.APP_URL }}
-      APP_URL: ${{ vars.APP_URL }}
-      MONITOR_HEARTBEAT_URL: ${{ secrets.MONITOR_HEARTBEAT_URL }}
     steps:
-      - name: Validate the release SHA
-        run: >-
-          [[ "$RELEASE_REF" =~ ^[0-9a-f]{40}$ ]] ||
-          (echo "ref must be a full 40-character lowercase commit SHA" && exit 1)
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
-          ref: ${{ inputs.ref }}
-          fetch-depth: 0
-      - name: Require the release to belong to main
-        run: git merge-base --is-ancestor "$RELEASE_REF" origin/main
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 24
+          node-version-file: .node-version
           cache: npm
       - run: npm ci
-      - run: npm run build:production
-      - run: node scripts/write-deploy-secrets.mjs main
-      - name: Record the current Worker deployment and D1 recovery bookmark
-        run: |
-          mkdir -p deployment-records
-          npx wrangler deployments list --config dist/server/wrangler.json --json > deployment-records/worker-deployments.json
-          npx wrangler d1 time-travel info DB --config dist/server/wrangler.json --json > deployment-records/d1-bookmark.json
-      - name: Preserve recovery records
-        uses: actions/upload-artifact@v4
-        with:
-          name: production-recovery-${{ github.run_id }}
-          path: deployment-records/
-          retention-days: 30
-      - name: Apply backward-compatible D1 migrations
-        run: npx wrangler d1 migrations apply DB --remote --config dist/server/wrangler.json
-      - name: Upload an immutable candidate
+      - run: npm run verify
+      - name: Record prior versions if present
+        continue-on-error: true
+        run: npx wrangler versions list --config wrangler.jsonc --env production
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - run: npm run deploy:production
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          AUTH_SESSION_SECRET: ${{ secrets.AUTH_SESSION_SECRET }}
+          BOT_API_ORIGIN: ${{ vars.BOT_API_ORIGIN }}
+          BOT_API_TOKEN: ${{ secrets.BOT_API_TOKEN }}
+          DISCORD_CLIENT_SECRET: ${{ secrets.DISCORD_CLIENT_SECRET }}
+          BOT_DISCORD_GUILD_ID: ${{ vars.BOT_DISCORD_GUILD_ID }}
+          DISCORD_CLIENT_ID: ${{ vars.DISCORD_CLIENT_ID }}
+          PUBLIC_ORIGIN: ${{ vars.PUBLIC_ORIGIN }}
+      - id: smoke
+        continue-on-error: true
+        run: npm run smoke
+        env:
+          PUBLIC_ORIGIN: ${{ vars.PUBLIC_ORIGIN }}
+      - name: Roll back a failed release
+        if: steps.smoke.outcome == 'failure'
         run: >-
-          npx wrangler versions upload
-          --config dist/server/wrangler.json
-          --secrets-file .wrangler/generated/main-secrets.json
-          --tag "$RELEASE_REF"
-          --message "production $RELEASE_REF"
-          --preview-alias candidate
-      - name: Smoke-test the candidate version
-        run: curl --fail --show-error --retry 6 --retry-all-errors --retry-delay 5 "${{ vars.PREVIEW_URL }}/api/health/ready"
-      - name: Promote the candidate atomically
-        id: promote
-        run: >-
-          npx wrangler versions deploy
-          --config dist/server/wrangler.json
-          --version-tag "$RELEASE_REF"
-          --message "production $RELEASE_REF"
+          npx wrangler rollback
+          --config wrangler.jsonc
+          --env production
           --yes
-      - name: Deploy the jobs Worker
-        id: jobs
-        continue-on-error: true
-        run: npm run deploy:jobs:production
-      - name: Synchronize guild commands
-        id: commands
-        continue-on-error: true
-        run: npm run discord:sync
-      - name: Smoke-test production
-        id: smoke
-        continue-on-error: true
-        run: curl --fail --show-error --retry 6 --retry-all-errors --retry-delay 5 "${{ vars.APP_URL }}/api/health/ready"
-      - name: Roll back an incomplete production release
-        if: >-
-          always() && steps.promote.outcome == 'success' &&
-          (steps.jobs.outcome == 'failure' ||
-           steps.commands.outcome == 'failure' ||
-           steps.smoke.outcome == 'failure')
-        run: npx wrangler rollback --config dist/server/wrangler.json --message "automatic rollback after incomplete production release" --yes
-      - name: Fail the release after rollback
-        if: >-
-          always() && steps.promote.outcome == 'success' &&
-          (steps.jobs.outcome == 'failure' ||
-           steps.commands.outcome == 'failure' ||
-           steps.smoke.outcome == 'failure')
+          --message "Automatic rollback after failed smoke check"
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: Mark a rolled-back release as failed
+        if: steps.smoke.outcome == 'failure'
         run: exit 1

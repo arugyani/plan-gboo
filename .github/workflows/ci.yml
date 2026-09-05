@@ -4,46 +4,50 @@ on:
   pull_request:
   push:
     branches: [main]
-  workflow_dispatch:
-
-permissions:
-  contents: read
 
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
-  verify:
-    name: Verify
+  web-and-worker:
+    name: Web and Worker
     runs-on: ubuntu-latest
-    timeout-minutes: 35
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
-          node-version: 24
+          node-version-file: .node-version
           cache: npm
       - run: npm ci
-      - run: npx playwright install --with-deps chromium firefox webkit
       - run: npm run format:check
       - run: npm run lint
       - run: npm run typecheck
-      - run: npm run test:unit
-      - name: Apply every migration to a fresh local D1 database
-        run: npm run db:migrate:local
+      - run: npm run test:coverage
       - run: npm run build
-      - name: Validate both Worker bundles
-        run: |
-          npx wrangler deploy --dry-run --config dist/server/wrangler.json
-          npx wrangler deploy --dry-run --config jobs/wrangler.json --env=""
-      - name: Browser, keyboard, responsive, and accessibility checks
-        run: npx playwright test --workers=2
-      - name: Audit shipped dependencies
-        run: npm audit --omit=dev --audit-level=high
-      - name: Keep browser diagnostics when a check fails
+      - run: npm run cf:types
+      - run: git diff --exit-code -- worker-configuration.d.ts
+      - run: npm run cf:dry-run
+      - run: npm audit --audit-level=high
+
+  browsers:
+    name: Browsers and accessibility
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium firefox webkit
+      - run: npm run test:e2e
+      - name: Save browser report on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: playwright-report
           path: |

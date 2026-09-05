@@ -1,44 +1,23 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
-
-# dependencies
-/node_modules
-/.pnp
-.pnp.*
-.yarn/*
-!.yarn/patches
-!.yarn/plugins
-!.yarn/releases
-!.yarn/versions
-
-# testing
-/coverage
-
-# next.js
-/.next/
-/.vinext/
-/out/
-
-# misc
-.DS_Store
-*.pem
-
-# debug
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.pnpm-debug.log*
-
-# env files (can opt-in for committing if needed)
+node_modules/
+dist/
+build/
+.next/
+.vinext/
+.wrangler/
+.dev.vars*
 .env*
 !.env.example
-
-# vercel
-.vercel
-
-/dist/
-/.wrangler/
-/outputs/
-/work/
-/playwright-report/
-/test-results/
+coverage/
+playwright-report/
+test-results/
 *.tsbuildinfo
+*.cpuprofile
+.DS_Store
+
+# The bot is checked out here locally but is versioned and deployed from its
+# own repository: https://github.com/arugyani/kanban
+kanban/
+
+# Local agent tooling is not required to build or deploy the application.
+.agents/
+skills-lock.json
