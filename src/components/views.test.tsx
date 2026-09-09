@@ -91,6 +91,9 @@ describe("shared views", () => {
     const toggleBoard = vi.fn();
     render(
       <AllTogetherView
+        personId="all"
+        setPersonId={vi.fn()}
+        onOpenBoard={vi.fn()}
         data={demoDashboard}
         selectedBoardIds={demoDashboard.boards.map((board) => board.id)}
         onToggleBoard={toggleBoard}

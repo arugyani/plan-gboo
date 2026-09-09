@@ -1,15 +1,7 @@
 import { useEffect, useState } from "react";
-import {
-  Activity,
-  LayoutDashboard,
-  ListTodo,
-  UserRound,
-  UsersRound,
-} from "lucide-react";
+import { navigationItems, type View } from "@/lib/navigation";
+export type { View } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
-
-export type View =
-  "board" | "together" | "mine" | "activity" | "groups" | "people";
 
 export function SyncStatus({ syncing }: { syncing: boolean }) {
   const [dotCount, setDotCount] = useState(1);
@@ -44,14 +36,6 @@ export function Navigation({
   setView: (view: View) => void;
   compact?: boolean;
 }) {
-  const items = [
-    { id: "mine" as const, label: "My List", icon: ListTodo },
-    { id: "board" as const, label: "Boards", icon: LayoutDashboard },
-    { id: "activity" as const, label: "What’s Happening", icon: Activity },
-    { id: "groups" as const, label: "Groups", icon: UsersRound },
-    { id: "people" as const, label: "People", icon: UserRound },
-  ];
-
   return (
     <nav
       aria-label="Primary"
@@ -59,17 +43,16 @@ export function Navigation({
         compact ? "board-scroll flex gap-1 overflow-x-auto" : "space-y-1"
       }
     >
-      {items.map((item) => (
+      {navigationItems.map((item) => (
         <button
           key={item.id}
           type="button"
+          aria-current={view === item.id ? "page" : undefined}
           onClick={() => setView(item.id)}
           className={cn(
             "flex min-h-10 items-center gap-3 rounded-lg px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-card hover:text-foreground",
             compact ? "min-w-max flex-1 gap-1.5 px-2 text-[11px]" : "w-full",
-            (view === item.id ||
-              (item.id === "board" && view === "together")) &&
-              "bg-card text-foreground shadow-sm",
+            view === item.id && "bg-card text-foreground shadow-sm",
           )}
         >
           <item.icon className="size-4" /> {item.label}

@@ -99,6 +99,7 @@ describe("The Board", () => {
   it("creates a card from the board", async () => {
     renderApp();
     await screen.findByRole("heading", { name: "Opening Night" });
+    fireEvent.click(screen.getAllByRole("button", { name: "Boards" })[0]);
     fireEvent.click(screen.getByRole("button", { name: /add a card/i }));
     fireEvent.change(screen.getByPlaceholderText("A clear, short title"), {
       target: { value: "Check the lantern batteries" },

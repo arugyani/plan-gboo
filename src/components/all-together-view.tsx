@@ -6,6 +6,9 @@ import type { Card, DashboardData, Importance } from "@/types";
 
 export function AllTogetherView({
   data,
+  personId,
+  setPersonId,
+  onOpenBoard,
   selectedBoardIds,
   onToggleBoard,
   cards,
@@ -18,6 +21,9 @@ export function AllTogetherView({
   onOpenCard,
 }: {
   data: DashboardData;
+  personId: string;
+  setPersonId: (id: string) => void;
+  onOpenBoard: (id: string) => void;
   selectedBoardIds: string[];
   onToggleBoard: (boardId: string) => void;
   cards: Card[];
@@ -65,15 +71,37 @@ export function AllTogetherView({
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
+              aria-label="Filter cards"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Find a card…"
               className="pl-9"
             />
           </div>
+          <select
+            aria-label="Filter by person"
+            value={personId}
+            onChange={(event) => setPersonId(event.target.value)}
+            className="h-10 min-w-0 rounded-lg border border-input bg-card px-3 text-sm outline-none focus:ring-2 focus:ring-ring sm:max-w-44"
+          >
+            <option value="all">Everyone</option>
+            <option value="unassigned">Nobody yet</option>
+            {data.people
+              .filter((person) => person.active)
+              .map((person) => (
+                <option key={person.id} value={person.id}>
+                  {person.name}
+                </option>
+              ))}
+          </select>
           <Button
             variant={mineOnly ? "secondary" : "outline"}
-            onClick={() => setMineOnly(!mineOnly)}
+            aria-pressed={mineOnly}
+            className="h-10"
+            onClick={() => {
+              setPersonId("all");
+              setMineOnly(!mineOnly);
+            }}
           >
             <Users /> {mineOnly ? "Showing mine" : "Mine only"}
           </Button>
@@ -111,8 +139,18 @@ export function AllTogetherView({
                     aria-labelledby={`together-${board.id}`}
                   >
                     <div className="mb-3 flex items-center justify-between gap-3 px-1">
-                      <h2 id={`together-${board.id}`} className="font-bold">
-                        {board.name}
+                      <h2
+                        id={`together-${board.id}`}
+                        className="min-w-0 font-bold"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => onOpenBoard(board.id)}
+                          className="max-w-full truncate rounded px-1 py-1 text-left hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          aria-label={`Open board ${board.name}`}
+                        >
+                          {board.name}
+                        </button>
                       </h2>
                       <span className="text-xs tabular-nums text-muted-foreground">
                         {boardCards.length}

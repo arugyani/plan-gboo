@@ -8,6 +8,7 @@
   --color-popover: var(--popover);
   --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
+  --color-primary-hover: #a33c13;
   --color-primary-foreground: var(--primary-foreground);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
@@ -85,6 +86,40 @@ textarea {
 .board-scroll {
   scrollbar-color: #c8beb1 transparent;
   scrollbar-width: thin;
+}
+
+.command-palette[data-state="open"] {
+  animation: palette-in 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.command-palette[data-state="closed"] {
+  animation: palette-out 100ms ease-in;
+}
+
+.command-results {
+  height: var(--cmdk-list-height);
+  min-height: 100px;
+  max-height: min(50dvh, 380px);
+  transition: height 140ms ease;
+  scroll-padding-block: 8px;
+}
+
+@keyframes palette-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes palette-out {
+  to {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -81,6 +81,7 @@ test("adds a card through the same API used by the Discord bot", async ({
   });
 
   await page.goto("/");
+  await page.getByRole("button", { name: "Boards", exact: true }).click();
   await page.getByRole("button", { name: "Add a card" }).click();
   await page
     .getByPlaceholder("A clear, short title")
@@ -139,6 +140,7 @@ test("moves a card by dragging it to another column", async ({
   });
 
   await page.goto("/");
+  await page.getByRole("button", { name: "Boards", exact: true }).click();
   await page
     .locator('[data-card-id="card-1"]')
     .dragTo(page.locator('[data-column-id="opening-3"]'));
@@ -205,6 +207,7 @@ test("reorders cards within a column", async ({ page }) => {
   });
 
   await page.goto("/");
+  await page.getByRole("button", { name: "Boards", exact: true }).click();
   await page
     .locator('[data-card-id="card-5"]')
     .dragTo(page.locator('[data-card-id="card-1"]'), {
@@ -315,6 +318,7 @@ test("keeps a 100-card board responsive", async ({ page }, testInfo) => {
 
   const startedAt = Date.now();
   await page.goto("/");
+  await page.getByRole("button", { name: "Boards", exact: true }).click();
   await expect(
     page.getByText("Performance card 99", { exact: true }),
   ).toBeVisible();

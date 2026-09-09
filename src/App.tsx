@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Ghost, Layers3, Search } from "lucide-react";
+import { Ghost } from "lucide-react";
+import { CommandPalette } from "@/components/command-palette";
 import { AllTogetherView } from "@/components/all-together-view";
 import { toast } from "sonner";
 import { ActivityView } from "@/components/activity-view";
@@ -17,7 +18,6 @@ import {
   ErrorScreen,
   LoadingScreen,
 } from "@/components/state-screens";
-import { Input } from "@/components/ui/input";
 import { boardApi } from "@/lib/board-api";
 import { cn } from "@/lib/utils";
 import type {
@@ -55,7 +55,8 @@ function rankForPlacement(
 
 function App() {
   const queryClient = useQueryClient();
-  const [view, setView] = useState<View>("board");
+  const [view, setView] = useState<View>("together");
+  const [personId, setPersonId] = useState("all");
   const [boardId, setBoardId] = useState<string | null>(null);
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
@@ -261,6 +262,13 @@ function App() {
     togetherBoardIds ?? data.boards.map((board) => board.id);
   const togetherCards = data.cards
     .filter((card) => selectedTogetherBoardIds.includes(card.boardId))
+    .filter(
+      (card) =>
+        personId === "all" ||
+        (personId === "unassigned"
+          ? card.personIds.length === 0
+          : card.personIds.includes(personId)),
+    )
     .filter((card) => !mineOnly || card.personIds.includes(data.viewer.id))
     .filter((card) => importance === "all" || card.importance === importance)
     .filter(
@@ -294,18 +302,21 @@ function App() {
             <p className="truncate text-sm font-bold tracking-tight">RGBOO</p>
           </div>
         </div>
-        <div className="mx-auto hidden w-full max-w-md px-8 md:block">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Find a card by title or ID…"
-              className="bg-background pl-9"
-            />
-          </div>
-        </div>
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-3 pl-3 sm:gap-5">
+          <CommandPalette
+            data={data}
+            onView={setView}
+            onBoard={selectBoard}
+            onCard={setSelectedCardId}
+            onPerson={(id) => {
+              setPersonId(id);
+              setTogetherBoardIds(null);
+              setSearch("");
+              setMineOnly(false);
+              setImportance("all");
+              setView("together");
+            }}
+          />
           <SyncStatus syncing={dashboard.isFetching} />
         </div>
       </header>
@@ -318,17 +329,6 @@ function App() {
               Boards
             </p>
             <div className="space-y-1">
-              <button
-                type="button"
-                onClick={() => setView("together")}
-                className={cn(
-                  "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm transition-colors hover:bg-card",
-                  view === "together" && "bg-card font-semibold shadow-sm",
-                )}
-              >
-                <Layers3 className="size-4 text-muted-foreground" />
-                <span>All Together</span>
-              </button>
               {data.boards.map((board) => {
                 const group = data.groups.find(
                   (item) => item.id === board.groupId,
@@ -417,6 +417,12 @@ function App() {
           ) : view === "together" ? (
             <AllTogetherView
               data={data}
+              personId={personId}
+              setPersonId={(id) => {
+                setPersonId(id);
+                setMineOnly(false);
+              }}
+              onOpenBoard={selectBoard}
               selectedBoardIds={selectedTogetherBoardIds}
               onToggleBoard={(nextBoardId) =>
                 setTogetherBoardIds((current) => {
