@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Layers3, Search, Users } from "lucide-react";
 import { BoardCard } from "@/components/board-card";
 import { Button } from "@/components/ui/button";
@@ -35,6 +36,9 @@ export function AllTogetherView({
   setImportance: (value: Importance | "all") => void;
   onOpenCard: (id: string) => void;
 }) {
+  const [visibleCounts, setVisibleCounts] = useState<Record<string, number>>(
+    {},
+  );
   return (
     <div className="px-4 py-6 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-7xl">
@@ -132,6 +136,7 @@ export function AllTogetherView({
                   .sort((left, right) =>
                     right.updatedAt.localeCompare(left.updatedAt),
                   );
+                const visibleCount = visibleCounts[board.id] ?? 24;
                 return (
                   <section
                     key={board.id}
@@ -157,7 +162,7 @@ export function AllTogetherView({
                       </span>
                     </div>
                     <div className="grid gap-3 sm:grid-cols-2">
-                      {boardCards.map((card) => (
+                      {boardCards.slice(0, visibleCount).map((card) => (
                         <BoardCard
                           key={card.id}
                           card={card}
@@ -168,6 +173,21 @@ export function AllTogetherView({
                         />
                       ))}
                     </div>
+                    {boardCards.length > visibleCount ? (
+                      <Button
+                        variant="outline"
+                        className="mt-3 w-full"
+                        onClick={() =>
+                          setVisibleCounts((current) => ({
+                            ...current,
+                            [board.id]: visibleCount + 24,
+                          }))
+                        }
+                        aria-label={`Show more cards from ${board.name}`}
+                      >
+                        Show more · {boardCards.length - visibleCount} remaining
+                      </Button>
+                    ) : null}
                     {!boardCards.length ? (
                       <div className="grid min-h-24 place-items-center rounded-xl border border-dashed border-[#cec5b9] text-sm text-muted-foreground">
                         Nothing matches here

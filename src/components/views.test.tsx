@@ -86,6 +86,55 @@ describe("shared views", () => {
     ).toBeInTheDocument();
   });
 
+  it("reveals large boards in batches without hiding search matches", () => {
+    const cards = Array.from({ length: 60 }, (_, index) => ({
+      ...demoDashboard.cards[0],
+      id: `large-${index}`,
+      key: `BOO-${index}`,
+      title: `Card ${index}`,
+    }));
+    const props = {
+      data: demoDashboard,
+      personId: "all",
+      setPersonId: vi.fn(),
+      onOpenBoard: vi.fn(),
+      selectedBoardIds: [cards[0].boardId],
+      onToggleBoard: vi.fn(),
+      cards,
+      search: "",
+      setSearch: vi.fn(),
+      mineOnly: false,
+      setMineOnly: vi.fn(),
+      importance: "all" as const,
+      setImportance: vi.fn(),
+      onOpenCard: vi.fn(),
+    };
+    const { rerender } = render(<AllTogetherView {...props} />);
+    expect(screen.getAllByRole("button", { name: /^Open BOO-/ })).toHaveLength(
+      24,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Show more cards/ }));
+    expect(screen.getAllByRole("button", { name: /^Open BOO-/ })).toHaveLength(
+      48,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Show more cards/ }));
+    expect(screen.getAllByRole("button", { name: /^Open BOO-/ })).toHaveLength(
+      60,
+    );
+    expect(
+      screen.queryByRole("button", { name: /Show more cards/ }),
+    ).not.toBeInTheDocument();
+    rerender(
+      <AllTogetherView {...props} search="BOO-59" cards={[cards[59]]} />,
+    );
+    expect(screen.getAllByRole("button", { name: /^Open BOO-/ })).toHaveLength(
+      1,
+    );
+    expect(
+      screen.getByRole("button", { name: "Open BOO-59: Card 59" }),
+    ).toBeInTheDocument();
+  });
+
   it("combines selected boards without enabling card dragging", () => {
     const openCard = vi.fn();
     const toggleBoard = vi.fn();
