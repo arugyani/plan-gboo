@@ -49,6 +49,7 @@
     },
     "production": {
       "name": "rgboo-organizer",
+      "routes": [{ "pattern": "plan.rgboo.com", "custom_domain": true }],
       "secrets": {
         "required": [
           "AUTH_SESSION_SECRET",
