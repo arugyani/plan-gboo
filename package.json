@@ -45,6 +45,11 @@
     "sonner": "2.0.8",
     "tailwind-merge": "3.6.0"
   },
+  "overrides": {
+    "miniflare": {
+      "sharp": "0.35.4"
+    }
+  },
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",
     "@cloudflare/vitest-plugin": "1.1.4",
