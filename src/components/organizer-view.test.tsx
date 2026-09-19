@@ -44,7 +44,7 @@ describe("organizer screens", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Add board" }));
-    fireEvent.change(screen.getByLabelText("Name"), {
+    fireEvent.change(screen.getByLabelText("Board name"), {
       target: { value: "Costumes" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Add board" }));

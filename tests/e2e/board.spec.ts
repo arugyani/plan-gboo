@@ -5,6 +5,7 @@ import type {
   Card,
   CardPatch,
   CreateCardInput,
+  CreateBoardInput,
   DashboardData,
 } from "../../src/types";
 
@@ -21,6 +22,121 @@ async function mockDashboard(page: Page, data: DashboardData = demoDashboard) {
     await fulfillJson(route, data);
   });
 }
+
+test("moves a saved card between boards and opens the destination", async ({
+  page,
+}, testInfo) => {
+  const dashboard = structuredClone(demoDashboard);
+  const card = dashboard.cards[0];
+  const destination = dashboard.boards.find(
+    (board) => board.id !== card.boardId,
+  )!;
+  const column = dashboard.columns.find(
+    (column) => column.boardId === destination.id,
+  )!;
+  await mockDashboard(page, dashboard);
+  await page.route(`**/api/cards/${card.id}/move`, async (route) => {
+    const input = route.request().postDataJSON() as {
+      boardId: string;
+      columnId: string;
+      expectedVersion: number;
+    };
+    expect(input).toEqual({
+      boardId: destination.id,
+      columnId: column.id,
+      expectedVersion: card.version,
+    });
+    card.boardId = input.boardId;
+    card.columnId = input.columnId;
+    card.version++;
+    await fulfillJson(route, { card });
+  });
+  await page.goto("/");
+  await page
+    .getByRole("button", { name: new RegExp(`open ${card.key}`, "i") })
+    .click();
+  await page
+    .getByRole("button", { name: "Move to board", exact: true })
+    .click();
+  await expect(page.getByLabel("Destination board")).toHaveValue(
+    destination.id,
+  );
+  await page.screenshot({ path: testInfo.outputPath("move-board.png") });
+  await page.getByRole("button", { name: "Move card", exact: true }).click();
+  await expect(page.getByLabel("Card title")).toHaveCount(0);
+  await expect(
+    page.getByRole("heading", { name: destination.name, exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: new RegExp(`open ${card.key}`, "i") }),
+  ).toBeVisible();
+});
+
+test("creates a board from All Together", async ({ page }, testInfo) => {
+  const dashboard = structuredClone(demoDashboard);
+  await mockDashboard(page, dashboard);
+  await page.route("**/api/boards", async (route) => {
+    const input = route.request().postDataJSON() as CreateBoardInput;
+    const board = {
+      ...dashboard.boards[0],
+      id: "new-board",
+      name: input.name,
+      groupId: input.groupId,
+    };
+    dashboard.boards.push(board);
+    dashboard.columns.push(
+      ...dashboard.columns
+        .filter((column) => column.boardId === dashboard.boards[0].id)
+        .map((column) => ({
+          ...column,
+          id: `new-${column.id}`,
+          boardId: board.id,
+        })),
+    );
+    await fulfillJson(route, { board }, 201);
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Add a board", exact: true }).click();
+  await page.getByLabel("Board name", { exact: true }).fill("October plans");
+  await page.screenshot({ path: testInfo.outputPath("create-board.png") });
+  await page.getByRole("button", { name: "Add board", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "October plans" }),
+  ).toBeVisible();
+});
+
+test("deletes a card only after confirmation", async ({ page }, testInfo) => {
+  const dashboard = structuredClone(demoDashboard);
+  const card = dashboard.cards[0];
+  let deletions = 0;
+  await mockDashboard(page, dashboard);
+  await page.route(`**/api/cards/${card.id}?*`, async (route) => {
+    expect(route.request().method()).toBe("DELETE");
+    expect(
+      new URL(route.request().url()).searchParams.get("expectedVersion"),
+    ).toBe(String(card.version));
+    deletions++;
+    dashboard.cards = dashboard.cards.filter((item) => item.id !== card.id);
+    await route.fulfill({ status: 204 });
+  });
+  await page.goto("/");
+  await page
+    .getByRole("button", { name: new RegExp(`open ${card.key}`, "i") })
+    .click();
+  await page.getByRole("button", { name: "Delete card", exact: true }).click();
+  await page.screenshot({ path: testInfo.outputPath("delete-card.png") });
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  expect(deletions).toBe(0);
+  await page.getByRole("button", { name: "Delete card", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Delete permanently", exact: true })
+    .click();
+  await expect(page.getByLabel("Card title")).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: new RegExp(`open ${card.key}`, "i") }),
+  ).toHaveCount(0);
+  expect(deletions).toBe(1);
+});
 
 test("shows the real board navigation without a redundant refresh control", async ({
   page,

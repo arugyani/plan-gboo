@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Layers3, Search, Users } from "lucide-react";
+import { Layers3, Plus, Search, Users } from "lucide-react";
 import { BoardCard } from "@/components/board-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,6 +20,7 @@ export function AllTogetherView({
   importance,
   setImportance,
   onOpenCard,
+  onCreateBoard,
 }: {
   data: DashboardData;
   personId: string;
@@ -35,6 +36,7 @@ export function AllTogetherView({
   importance: Importance | "all";
   setImportance: (value: Importance | "all") => void;
   onOpenCard: (id: string) => void;
+  onCreateBoard?: () => void;
 }) {
   const [visibleCounts, setVisibleCounts] = useState<Record<string, number>>(
     {},
@@ -47,6 +49,15 @@ export function AllTogetherView({
           <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
             All Together
           </h1>
+          {onCreateBoard ? (
+            <Button
+              variant="outline"
+              className="ml-auto"
+              onClick={onCreateBoard}
+            >
+              <Plus /> Add a board
+            </Button>
+          ) : null}
         </div>
 
         <fieldset className="mt-5">

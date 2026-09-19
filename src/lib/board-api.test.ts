@@ -28,6 +28,33 @@ const card: Card = {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("bot board API client", () => {
+  it("transfers through the shared move endpoint with both destination IDs", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(Response.json({ card }));
+    vi.stubGlobal("fetch", fetchMock);
+    await boardApi.transferCard(card.id, "other-board", "other-column", 3);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/cards/${card.id}/move`,
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          boardId: "other-board",
+          columnId: "other-column",
+          expectedVersion: 3,
+        }),
+      }),
+    );
+  });
+  it("deletes using the shared backend with a version check", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await boardApi.deleteCard(card.id, 3);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/cards/${card.id}?expectedVersion=3`,
+      expect.objectContaining({ method: "DELETE", credentials: "include" }),
+    );
+  });
   it("creates cards through the shared bot endpoint", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ card }), {

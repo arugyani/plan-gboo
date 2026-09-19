@@ -10,6 +10,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { CreateBoardDialog } from "@/components/create-board-dialog";
 import type {
   Board,
   BoardColumn,
@@ -132,54 +133,14 @@ export function BoardDialog({
   busy: boolean;
   onCreate: (input: CreateBoardInput) => Promise<void>;
 }) {
-  const [name, setName] = useState("");
-  const handleOpenChange = (nextOpen: boolean) => {
-    if (!nextOpen) setName("");
-    onOpenChange(nextOpen);
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Add a board</DialogTitle>
-          <DialogDescription>{group.name}</DialogDescription>
-        </DialogHeader>
-        <form
-          className="grid gap-4"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (name.trim())
-              void onCreate({ name: name.trim(), groupId: group.id })
-                .then(() => handleOpenChange(false))
-                .catch(() => undefined);
-          }}
-        >
-          <label className="grid gap-1.5 text-sm font-semibold">
-            Name
-            <Input
-              autoFocus
-              maxLength={50}
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-            />
-          </label>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => handleOpenChange(false)}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" disabled={busy || !name.trim()}>
-              Add board
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
+  return open ? (
+    <CreateBoardDialog
+      groups={[group]}
+      busy={busy}
+      onCreate={onCreate}
+      onClose={() => onOpenChange(false)}
+    />
+  ) : null;
 }
 
 export function ColumnDialog({

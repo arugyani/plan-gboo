@@ -70,6 +70,24 @@ function renderApp() {
 }
 
 describe("The Board", () => {
+  it("hides board creation and deletion from members without organizer permissions", async () => {
+    dashboard.viewer.systemRole = "member";
+    dashboard.viewer.groupRoles = {
+      "show-crew": "member",
+      "site-crew": "view_only",
+    };
+    renderApp();
+    await screen.findByRole("heading", { name: "All Together" });
+    expect(
+      screen.queryByRole("button", { name: "Add a board" }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /open show-12/i }));
+    await screen.findByLabelText("Card title");
+    expect(
+      screen.queryByRole("button", { name: "Delete card" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("opens a card and exposes the Discord-equivalent actions", async () => {
     renderApp();
     expect(

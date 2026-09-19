@@ -25,6 +25,9 @@ function sheetProps(cardIndex = 3) {
     canEdit: true,
     busy: false,
     onSave: vi.fn(async () => undefined),
+    onDelete: vi
+      .fn<(version: number) => Promise<void>>()
+      .mockResolvedValue(undefined),
     onMove: vi.fn(async () => undefined),
     canMoveUp: true,
     canMoveDown: true,
@@ -38,6 +41,38 @@ function sheetProps(cardIndex = 3) {
 }
 
 describe("card details", () => {
+  it("requires confirmation before deleting and supports cancelling", async () => {
+    const props = sheetProps();
+    render(<CardSheet {...props} />);
+    fireEvent.click(screen.getByRole("button", { name: "Delete card" }));
+    expect(props.onDelete).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(props.onDelete).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Delete card" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete permanently" }));
+    await waitFor(() =>
+      expect(props.onDelete).toHaveBeenCalledWith(props.card.version),
+    );
+  });
+
+  it("keeps a failed deletion visible with a retry and hides deletion for viewers", async () => {
+    const props = sheetProps();
+    props.onDelete.mockRejectedValueOnce(
+      new Error("This card changed while you were looking at it."),
+    );
+    const { rerender } = render(<CardSheet {...props} />);
+    fireEvent.click(screen.getByRole("button", { name: "Delete card" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete permanently" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "This card changed",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    rerender(<CardSheet {...props} canEdit={false} />);
+    expect(
+      screen.queryByRole("button", { name: "Delete card" }),
+    ).not.toBeInTheDocument();
+  });
   it("saves the editable fields with a version check", async () => {
     const props = sheetProps();
     render(<CardSheet {...props} />);

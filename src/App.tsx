@@ -9,6 +9,7 @@ import { Navigation, SyncStatus, type View } from "@/components/app-navigation";
 import { BoardView } from "@/components/board-view";
 import { CardSheet } from "@/components/card-sheet";
 import { CreateCardDialog } from "@/components/create-card-dialog";
+import { CreateBoardDialog } from "@/components/create-board-dialog";
 import { MyListView } from "@/components/my-list-view";
 import { GroupsView } from "@/components/organizer-view";
 import { PeopleView } from "@/components/people-view";
@@ -60,6 +61,7 @@ function App() {
   const [boardId, setBoardId] = useState<string | null>(null);
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [createBoardOpen, setCreateBoardOpen] = useState(false);
   const [recapOpen, setRecapOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [mineOnly, setMineOnly] = useState(false);
@@ -111,6 +113,28 @@ function App() {
     },
     onError: async (error: Error) => {
       toast.error(error.message);
+      await refresh();
+    },
+  });
+
+  const deleteCard = useMutation({
+    mutationFn: ({ id, version }: { id: string; version: number }) =>
+      boardApi.deleteCard(id, version),
+    onSuccess: async (_result, { id }) => {
+      await queryClient.cancelQueries({ queryKey: ["dashboard"] });
+      queryClient.setQueryData<DashboardData>(["dashboard"], (current) =>
+        current
+          ? {
+              ...current,
+              cards: current.cards.filter((card) => card.id !== id),
+            }
+          : current,
+      );
+      setSelectedCardId(null);
+      toast.success("Card deleted");
+      await refresh();
+    },
+    onError: async () => {
       await refresh();
     },
   });
@@ -167,6 +191,32 @@ function App() {
     onSettled: refresh,
   });
 
+  const transferCard = useMutation({
+    mutationFn: ({
+      id,
+      boardId,
+      columnId,
+      version,
+    }: {
+      id: string;
+      boardId: string;
+      columnId: string;
+      version: number;
+    }) => boardApi.transferCard(id, boardId, columnId, version),
+    onSuccess: async (card) => {
+      syncCard(card);
+      setSelectedCardId(null);
+      setBoardId(card.boardId);
+      setView("board");
+      setSearch("");
+      setMineOnly(false);
+      setImportance("all");
+      await refresh();
+      toast.success(`Moved ${card.key}`);
+    },
+    onError: refresh,
+  });
+
   const detailMutation = useMutation({
     mutationFn: async (action: () => Promise<unknown>) => action(),
     onSuccess: refresh,
@@ -202,6 +252,11 @@ function App() {
   }
 
   const data = dashboard.data;
+  const manageableGroups = data.groups.filter(
+    (group) =>
+      data.viewer.systemRole === "admin" ||
+      data.viewer.groupRoles[group.id] === "organizer",
+  );
   const currentBoard =
     data.boards.find((board) => board.id === boardId) ?? data.boards[0] ?? null;
   if (!currentBoard) return <EmptyWorkspace />;
@@ -279,6 +334,8 @@ function App() {
     );
 
   const busy =
+    transferCard.isPending ||
+    deleteCard.isPending ||
     createCard.isPending ||
     updateCard.isPending ||
     moveCard.isPending ||
@@ -416,6 +473,11 @@ function App() {
             />
           ) : view === "together" ? (
             <AllTogetherView
+              onCreateBoard={
+                manageableGroups.length
+                  ? () => setCreateBoardOpen(true)
+                  : undefined
+              }
               data={data}
               personId={personId}
               setPersonId={(id) => {
@@ -512,6 +574,22 @@ function App() {
         </main>
       </div>
 
+      {createBoardOpen ? (
+        <CreateBoardDialog
+          groups={manageableGroups}
+          busy={organizerMutation.isPending}
+          onClose={() => setCreateBoardOpen(false)}
+          onCreate={async (input) => {
+            let createdId = "";
+            await organize(async () => {
+              const board = await boardApi.createBoard(input);
+              createdId = board.id;
+            }, "Board added");
+            selectBoard(createdId);
+          }}
+        />
+      ) : null}
+
       <CreateCardDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
@@ -547,6 +625,40 @@ function App() {
         tags={selectedTags}
         viewerId={data.viewer.id}
         canEdit={canEditSelected}
+        destinationBoards={data.boards.filter(
+          (board) =>
+            board.id !== selectedCard?.boardId &&
+            (data.viewer.systemRole === "admin" ||
+              ["organizer", "member"].includes(
+                data.viewer.groupRoles[board.groupId],
+              )),
+        )}
+        destinationColumns={data.columns}
+        onTransfer={async (boardId, columnId, version) => {
+          if (selectedCard)
+            await transferCard.mutateAsync({
+              id: selectedCard.id,
+              boardId,
+              columnId,
+              version,
+            });
+        }}
+        onDelete={
+          canEditSelected &&
+          (data.viewer.systemRole === "admin" ||
+            Object.entries(data.viewer.groupRoles).some(
+              ([id, role]) =>
+                id.startsWith("discord-guild-") && role === "organizer",
+            ))
+            ? async (version) => {
+                if (selectedCard)
+                  await deleteCard.mutateAsync({
+                    id: selectedCard.id,
+                    version,
+                  });
+              }
+            : undefined
+        }
         busy={busy}
         onSave={async (patch) => {
           if (!selectedCard) return;

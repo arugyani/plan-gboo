@@ -24,6 +24,10 @@ next save.
 
 - `POST /api/cards`
 - `PATCH /api/cards/:id`
+- `DELETE /api/cards/:id?expectedVersion=N` — permanent deletion, returning 204.
+  Requires card edit access plus Discord Manage Messages permission (or a
+  configured installation administrator). A stale version returns 409; no
+  partial deletion is performed. Deploy the bot endpoint before the website UI.
 - `POST /api/cards/:id/move`
 - `POST /api/cards/:id/comments`
 - `POST /api/cards/:id/checklist`
@@ -34,6 +38,13 @@ next save.
 Card saves and moves carry `expectedVersion`. A move may also carry
 `targetCardId` and `edge: "before" | "after"`; without them it appends to the
 destination column. A stale version returns `409 version_conflict`.
+
+Moves can additionally send `boardId` to transfer the saved card to another
+board. Edit access to both boards is required; `columnId` must belong to the
+destination. Assignments must be valid in the destination group (otherwise the
+move fails without modifying the card). Tags travel by name; the card's ID,
+BOO reference, notes, checklist, links, and history are preserved. Deploy the
+bot update before enabling this UI.
 
 Card patches may send existing `tagIds` or a complete `tagNames` list. The
 latter creates the first tag in a group as well as applying existing names;

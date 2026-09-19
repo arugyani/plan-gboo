@@ -75,6 +75,15 @@ export const boardApi = {
     ).card;
   },
 
+  async deleteCard(cardId: string, expectedVersion: number) {
+    await request<void>(
+      `/api/cards/${cardId}?expectedVersion=${expectedVersion}`,
+      {
+        method: "DELETE",
+      },
+    );
+  },
+
   async moveCard(
     cardId: string,
     columnId: string,
@@ -96,6 +105,20 @@ export const boardApi = {
         body: JSON.stringify({ body }),
       })
     ).comment;
+  },
+
+  async transferCard(
+    cardId: string,
+    boardId: string,
+    columnId: string,
+    expectedVersion: number,
+  ) {
+    return (
+      await request<{ card: Card }>(`/api/cards/${cardId}/move`, {
+        method: "POST",
+        body: JSON.stringify({ boardId, columnId, expectedVersion }),
+      })
+    ).card;
   },
 
   async addChecklistItem(cardId: string, text: string) {

@@ -21,6 +21,14 @@ import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
   Sheet,
@@ -29,9 +37,11 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
+import { MoveBoardDialog } from "@/components/move-board-dialog";
 import { relativeTime } from "@/lib/utils";
 import type {
   BoardColumn,
+  Board,
   Card,
   CardPatch,
   Importance,
@@ -59,6 +69,10 @@ export function CardSheet({
   canEdit,
   busy,
   onSave,
+  onDelete,
+  destinationBoards = [],
+  destinationColumns = [],
+  onTransfer,
   onMove,
   canMoveUp,
   canMoveDown,
@@ -79,6 +93,14 @@ export function CardSheet({
   canEdit: boolean;
   busy: boolean;
   onSave: (patch: CardPatch) => Promise<void>;
+  onDelete?: (expectedVersion: number) => Promise<void>;
+  destinationBoards?: Board[];
+  destinationColumns?: BoardColumn[];
+  onTransfer?: (
+    boardId: string,
+    columnId: string,
+    version: number,
+  ) => Promise<void>;
   onMove: (columnId: string, expectedVersion: number) => Promise<void>;
   canMoveUp: boolean;
   canMoveDown: boolean;
@@ -93,6 +115,17 @@ export function CardSheet({
   onRemoveGitHubLink: (linkId: string) => Promise<void>;
 }) {
   const [title, setTitle] = useState("");
+  const [transferOpen, setTransferOpen] = useState(false);
+  const [deleteVersion, setDeleteVersion] = useState<number | null>(null);
+  const [deleteError, setDeleteError] = useState("");
+
+  useEffect(() => {
+    // A confirmation belongs only to the card that opened it.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setDeleteVersion(null);
+    setTransferOpen(false);
+    setDeleteError("");
+  }, [card?.id, open]);
   const [notes, setNotes] = useState("");
   const [importance, setImportance] = useState<Importance>("none");
   const [when, setWhen] = useState("");
@@ -341,6 +374,18 @@ export function CardSheet({
             </div>
           ) : null}
         </form>
+
+        {canEdit && onTransfer && destinationBoards.length ? (
+          <div className="px-5 pt-4 sm:px-7">
+            <Button
+              variant="outline"
+              disabled={busy}
+              onClick={() => setTransferOpen(true)}
+            >
+              Move to board
+            </Button>
+          </div>
+        ) : null}
 
         <div className="divide-y divide-border px-5 sm:px-7">
           <section className="py-6">
@@ -759,6 +804,20 @@ export function CardSheet({
 
         {canEdit ? (
           <div className="sticky bottom-0 flex items-center justify-end border-t border-border bg-card/95 px-5 py-4 backdrop-blur sm:px-7">
+            {onDelete ? (
+              <Button
+                type="button"
+                variant="ghost"
+                className="mr-auto text-destructive"
+                disabled={busy}
+                onClick={() => {
+                  setDeleteError("");
+                  setDeleteVersion(card.version);
+                }}
+              >
+                <Trash2 /> Delete card
+              </Button>
+            ) : null}
             <Button
               type="button"
               onClick={() => save()}
@@ -770,6 +829,66 @@ export function CardSheet({
           </div>
         ) : null}
       </SheetContent>
+      {canEdit && transferOpen && onTransfer ? (
+        <MoveBoardDialog
+          card={card}
+          boards={destinationBoards}
+          columns={destinationColumns}
+          busy={busy}
+          onMove={onTransfer}
+          onClose={() => setTransferOpen(false)}
+        />
+      ) : null}
+      <Dialog
+        open={deleteVersion !== null}
+        onOpenChange={(next) => {
+          if (!next && !busy) setDeleteVersion(null);
+        }}
+      >
+        <DialogContent
+          onOpenAutoFocus={(event) => {
+            event.preventDefault();
+            document.getElementById("cancel-card-delete")?.focus();
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>Delete {card.key}?</DialogTitle>
+            <DialogDescription>
+              “{card.title}” and its notes, checklist, and links will be
+              permanently deleted from the website and Discord board. This
+              cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          {deleteError ? (
+            <p role="alert" className="text-sm text-destructive">
+              {deleteError}
+            </p>
+          ) : null}
+          <DialogFooter>
+            <Button
+              id="cancel-card-delete"
+              variant="outline"
+              disabled={busy}
+              onClick={() => setDeleteVersion(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              disabled={busy || !canEdit}
+              onClick={() => {
+                if (busy || deleteVersion === null || !onDelete) return;
+                setDeleteError("");
+                void onDelete(deleteVersion)
+                  .then(() => setDeleteVersion(null))
+                  .catch((error: Error) => setDeleteError(error.message));
+              }}
+            >
+              {busy ? "Deleting…" : "Delete permanently"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Sheet>
   );
 }
